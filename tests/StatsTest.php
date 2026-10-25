@@ -94,6 +94,36 @@ final class StatsTest extends TestCase
     }
 
     /**
+     * Test that an valid username can be accessed with whitelist
+     */
+    public function testValidUsernameWithWhitelist(): void
+    {
+        $_SERVER["WHITELIST"] = "DenverCoder1";
+        try {
+            $contributionGraphs = getContributionGraphs("DenverCoder1");
+            $this->assertIsArray($contributionGraphs);
+            $this->assertNotEmpty($contributionGraphs);
+        } finally {
+            unset($_SERVER["WHITELIST"]);
+        }
+    }
+
+    /**
+     * Test that an not whitelisted username returns 'not whitelisted' error
+     */
+    public function testNotWhitelistedUsername(): void
+    {
+        $_SERVER["WHITELIST"] = "DenverCoder1";
+        try {
+            $this->expectException(InvalidArgumentException::class);
+            $this->expectExceptionMessage("User not in whitelist.");
+            getContributionGraphs("help");
+        } finally {
+            unset($_SERVER["WHITELIST"]);
+        }
+    }
+
+    /**
      * Test that an organization name returns 'not a user' error
      */
     public function testOrganizationName(): void
@@ -288,6 +318,53 @@ final class StatsTest extends TestCase
             "excludedDays" => [],
         ];
         $this->assertEquals($expected, $stats);
+    }
+
+    /**
+     * Test contribution dates with timezone override
+     */
+    public function testContributionDatesWithTimezone(): void
+    {
+        $now = new DateTimeImmutable("2026-01-01T01:00:00+00:00");
+        $today = getCurrentDate("America/New_York", $now);
+        $tomorrow = date("Y-m-d", strtotime("$today +1 day"));
+        $inTwoDays = date("Y-m-d", strtotime("$today +2 days"));
+        $contributionGraphs = [
+            (object) [
+                "data" => (object) [
+                    "user" => (object) [
+                        "contributionsCollection" => (object) [
+                            "contributionCalendar" => (object) [
+                                "weeks" => (object) [
+                                    (object) [
+                                        "contributionDays" => (object) [
+                                            (object) [
+                                                "contributionCount" => 1,
+                                                "date" => $today,
+                                            ],
+                                            (object) [
+                                                "contributionCount" => 0,
+                                                "date" => $tomorrow,
+                                            ],
+                                            (object) [
+                                                "contributionCount" => 1,
+                                                "date" => $inTwoDays,
+                                            ],
+                                        ],
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+
+        $contributions = getContributionDates($contributionGraphs, "America/New_York", $now);
+
+        $this->assertArrayHasKey($today, $contributions);
+        $this->assertArrayNotHasKey($tomorrow, $contributions);
+        $this->assertArrayNotHasKey($inTwoDays, $contributions);
     }
 
     /**

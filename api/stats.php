@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+require_once "whitelist.php";
+
 /**
  * Build a GraphQL query for a contribution graph
  *
@@ -106,7 +108,7 @@ function executeContributionGraphRequests(string $user, array $years): array
     }
     // close the handles
     foreach ($requests as $request) {
-        curl_multi_remove_handle($multi, $handle);
+        curl_multi_remove_handle($multi, $request);
     }
     curl_multi_close($multi);
     return $responses;
@@ -121,6 +123,10 @@ function executeContributionGraphRequests(string $user, array $years): array
  */
 function getContributionGraphs(string $user, ?int $startingYear = null): array
 {
+    if (!isWhitelisted($user)) {
+        throw new InvalidArgumentException("User not in whitelist.", 403);
+    }
+
     // get the list of years the user has contributed and the current year's contribution graph
     $currentYear = intval(date("Y"));
     $responses = executeContributionGraphRequests($user, [$currentYear]);
@@ -208,10 +214,7 @@ function removeGitHubToken(string $token): void
     }
     // if there is no available token, throw an error
     if (empty($GLOBALS["ALL_TOKENS"])) {
-        throw new AssertionError(
-            "We are being rate-limited! Check <a href='https://git.io/streak-ratelimit' font-weight='bold'>git.io/streak-ratelimit</a> for details.",
-            429,
-        );
+        throw new AssertionError("We are being rate-limited! Check https://git.io/streak-ratelimit for details.", 429);
     }
 }
 
@@ -245,14 +248,16 @@ function getGraphQLCurlHandle(string $query, string $token): CurlHandle
 /**
  * Get an array of all dates with the number of contributions
  *
- * @param array<int,stdClass> $contributionCalendars List of GraphQL response objects by year
+ * @param array<int,stdClass> $contributionGraphs List of GraphQL response objects by year
+ * @param string $timezone Timezone identifier, or empty for the server default
+ * @param DateTimeImmutable|null $now Current time override for tests
  * @return array<string,int> Y-M-D dates mapped to the number of contributions
  */
-function getContributionDates(array $contributionGraphs): array
+function getContributionDates(array $contributionGraphs, string $timezone = "", ?DateTimeImmutable $now = null): array
 {
     $contributions = [];
-    $today = date("Y-m-d");
-    $tomorrow = date("Y-m-d", strtotime("tomorrow"));
+    $today = getCurrentDate($timezone, $now);
+    $tomorrow = date("Y-m-d", strtotime("$today +1 day"));
     // sort contribution calendars by year key
     ksort($contributionGraphs);
     foreach ($contributionGraphs as $graph) {
@@ -271,6 +276,25 @@ function getContributionDates(array $contributionGraphs): array
         }
     }
     return $contributions;
+}
+
+/**
+ * Get the current date for a requested timezone.
+ *
+ * @param string $timezone Timezone identifier, or empty for the server default
+ * @param DateTimeImmutable|null $now Current time override for tests
+ * @return string Current date in Y-m-d format
+ */
+function getCurrentDate(string $timezone = "", ?DateTimeImmutable $now = null): string
+{
+    try {
+        $dateTimezone = new DateTimeZone($timezone ?: date_default_timezone_get());
+    } catch (Exception) {
+        throw new InvalidArgumentException("Invalid timezone.", 400);
+    }
+
+    $now = $now ?: new DateTimeImmutable("now");
+    return $now->setTimezone($dateTimezone)->format("Y-m-d");
 }
 
 /**

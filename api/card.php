@@ -367,7 +367,7 @@ function formatNumber(float $num, string $localeCode, bool $useShortNumbers): st
  *
  * @throws InvalidArgumentException If a locale does not exist
  */
-function generateCard(array $stats, array $params = null): string
+function generateCard(array $stats, ?array $params = null): string
 {
     $params = $params ?? $_REQUEST;
 
@@ -375,7 +375,7 @@ function generateCard(array $stats, array $params = null): string
     $theme = getRequestedTheme($params);
 
     // get requested locale, default to English
-    $localeCode = $params["locale"] ?? "en";
+    $localeCode = normalizeLocaleCode($params["locale"] ?? "en");
     $localeTranslations = getTranslations($localeCode);
 
     // whether the locale is right-to-left
@@ -386,7 +386,7 @@ function generateCard(array $stats, array $params = null): string
     $dateFormat = $params["date_format"] ?? ($localeTranslations["date_format"] ?? null);
 
     // read border_radius parameter, default to 4.5 if not set
-    $borderRadius = $params["border_radius"] ?? 4.5;
+    $borderRadius = floatval($params["border_radius"] ?? 4.5);
 
     $showTotalContributions = ($params["hide_total_contributions"] ?? "") !== "true";
     $showCurrentStreak = ($params["hide_current_streak"] ?? "") !== "true";
@@ -484,6 +484,7 @@ function generateCard(array $stats, array $params = null): string
     if (!empty($stats["excludedDays"])) {
         $offset = $direction === "rtl" ? $cardWidth - 5 : 5;
         $excludingDaysText = getExcludingDaysText($stats["excludedDays"], $localeTranslations, $localeCode);
+        $excludingDaysText = htmlspecialchars($excludingDaysText, ENT_QUOTES | ENT_SUBSTITUTE | ENT_XML1, "UTF-8");
         $excludedDays = "<g style='isolation: isolate'>
                 <!-- Excluded Days -->
                 <g transform='translate({$offset},187)'>
@@ -615,15 +616,16 @@ function generateCard(array $stats, array $params = null): string
  * @param array<string,string>|NULL $params Request parameters
  * @return string The generated SVG error card
  */
-function generateErrorCard(string $message, array $params = null): string
+function generateErrorCard(string $message, ?array $params = null): string
 {
     $params = $params ?? $_REQUEST;
+    $message = htmlspecialchars($message, ENT_QUOTES | ENT_SUBSTITUTE | ENT_XML1, "UTF-8");
 
     // get requested theme, use $_REQUEST if no params array specified
     $theme = getRequestedTheme($params);
 
     // read border_radius parameter, default to 4.5 if not set
-    $borderRadius = $params["border_radius"] ?? 4.5;
+    $borderRadius = floatval($params["border_radius"] ?? 4.5);
 
     // read card_width parameter
     $cardWidth = getCardWidth($params);
@@ -804,9 +806,10 @@ function convertSvgToPng(string $svg, int $cardWidth, int $cardHeight): string
  *
  * @param string|array $output The stats (array) or error message (string) to display
  * @param array<string,string>|NULL $params Request parameters
+ * @param int $errorCode The HTTP error code (used for JSON responses)
  * @return array The Content-Type header and the response body, and status code in case of an error
  */
-function generateOutput(string|array $output, array $params = null): array
+function generateOutput(string|array $output, ?array $params = null, int $errorCode = 200): array
 {
     $params = $params ?? $_REQUEST;
 
@@ -815,7 +818,7 @@ function generateOutput(string|array $output, array $params = null): array
     // output JSON data
     if ($requestedType === "json") {
         // generate array from output
-        $data = gettype($output) === "string" ? ["error" => $output] : $output;
+        $data = gettype($output) === "string" ? ["error" => $output, "code" => $errorCode] : $output;
         return [
             "contentType" => "application/json",
             "body" => json_encode($data),
@@ -864,13 +867,15 @@ function generateOutput(string|array $output, array $params = null): array
  * Set headers and output response
  *
  * @param string|array $output The Content-Type header and the response body
- * @param int $responseCode The HTTP response code to send
+ * @param int $responseCode The HTTP response code to send (stored for JSON consumers but always returns 200 for images)
  * @return void The function exits after sending the response
  */
 function renderOutput(string|array $output, int $responseCode = 200): void
 {
-    $response = generateOutput($output);
-    http_response_code($response["status"] ?? $responseCode);
+    $response = generateOutput($output, null, $responseCode);
+    // Always return HTTP 200 for SVG/PNG so GitHub's image proxy (Camo) displays error cards
+    // instead of broken images. The original error code is included in JSON responses.
+    http_response_code(200);
     header("Content-Type: {$response["contentType"]}");
     exit($response["body"]);
 }
