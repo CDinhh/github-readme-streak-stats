@@ -10,8 +10,18 @@
     "stats"
   ],
   "license": "MIT",
-  "version": "1.5.0",
+  "version": "1.8.1",
   "homepage": "https://github.com/DenverCoder1/github-readme-streak-stats",
+  "repositories": [
+      {
+          "type": "vcs",
+          "url": "https://github.com/DenverCoder1/github-readme-streak-stats"
+      }
+  ],
+  "support": {
+    "issues": "https://github.com/DenverCoder1/github-readme-streak-stats/issues",
+    "source": "https://github.com/DenverCoder1/github-readme-streak-stats"
+  },
   "autoload": {
     "classmap": [
       "api/"

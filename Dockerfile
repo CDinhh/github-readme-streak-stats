@@ -1,5 +1,5 @@
 # Use PHP 8.3 (8.4 not supported yet)
-FROM php:8.3-apache@sha256:6be4ef702b2dd05352f7e5fe14667696a4ad091c9d2ad9083becbee4300dc3b1
+FROM php:8.3.36-apache@sha256:756c2884677bedea30afaa95811b42cd3ff251203291c5820c1ad209e86c9fb4
 
 # Install system dependencies and PHP extensions in one layer
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -28,29 +28,33 @@ RUN composer install --no-dev --optimize-autoloader --no-scripts
 # Configure Apache to serve from src/ directory and pass environment variables
 RUN a2enmod rewrite headers && \
     echo 'ServerTokens Prod\n\
-ServerSignature Off\n\
-PassEnv TOKEN\n\
-<VirtualHost *:80>\n\
+    ServerSignature Off\n\
+    PassEnv TOKEN\n\
+    PassEnv WHITELIST\n\
+    <VirtualHost *:80>\n\
     ServerAdmin webmaster@localhost\n\
     DocumentRoot /var/www/html/src\n\
     <Directory /var/www/html/src>\n\
-        Options -Indexes\n\
-        AllowOverride None\n\
-        Require all granted\n\
-        Header always set Access-Control-Allow-Origin "*"\n\
-        Header always set Content-Type "image/svg+xml" "expr=%{REQUEST_URI} =~ m#\\.svg$#i"\n\
-        Header always set Content-Security-Policy "default-src 'none'; style-src 'unsafe-inline'; img-src data:;" "expr=%{REQUEST_URI} =~ m#\\.svg$#i"\n\
-        Header always set Referrer-Policy "no-referrer-when-downgrade"\n\
-        Header always set X-Content-Type-Options "nosniff"\n\
+    Options -Indexes\n\
+    AllowOverride None\n\
+    Require all granted\n\
+    Header always set Access-Control-Allow-Origin "*"\n\
+    Header always set Content-Type "image/svg+xml" "expr=%{REQUEST_URI} =~ m#\\.svg$#i"\n\
+    Header always set Content-Security-Policy "default-src 'none'; style-src 'unsafe-inline'; img-src data:;" "expr=%{REQUEST_URI} =~ m#\\.svg$#i"\n\
+    Header always set Referrer-Policy "no-referrer-when-downgrade"\n\
+    Header always set X-Content-Type-Options "nosniff"\n\
     </Directory>\n\
     ErrorLog ${APACHE_LOG_DIR}/error.log\n\
     CustomLog ${APACHE_LOG_DIR}/access.log combined\n\
-</VirtualHost>' > /etc/apache2/sites-available/000-default.conf
+    </VirtualHost>' > /etc/apache2/sites-available/000-default.conf
 
-# Set secure permissions
+RUN mkdir -p /var/www/html/cache
+
+# Set secure permissions (cache dir needs write access for www-data)
 RUN chown -R www-data:www-data /var/www/html && \
     find /var/www/html -type d -exec chmod 755 {} \; && \
-    find /var/www/html -type f -exec chmod 644 {} \;
+    find /var/www/html -type f -exec chmod 644 {} \; && \
+    chmod 775 /var/www/html/cache
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
